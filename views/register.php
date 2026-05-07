@@ -13,7 +13,7 @@
 <button>Зарегистрироваться</button>
 </form>
 
-<a href="/login">Войти</a>
+<a href="index.php?route=login">Войти</a>
 </div>
 
 <?php require 'footer.php'; ?>

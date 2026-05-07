@@ -1,25 +1,32 @@
 <?php
-session_start(); // запускаем сессию
+session_start(); // старт сессии
 
 require_once 'modules/auth/Auth.php';
 require_once 'modules/tasks/Task.php';
 
-// получаем путь без GET-параметров
-$uri = strtok($_SERVER["REQUEST_URI"], '?');
-$method = $_SERVER['REQUEST_METHOD']; // GET / POST
+/*
+========================
+ ПРОСТОЙ РОУТЕР ЧЕРЕЗ GET
+========================
+*/
+$route = $_GET['route'] ?? 'home';
+$method = $_SERVER['REQUEST_METHOD'];
 
-// функция для JSON-ответа
+// JSON ответ
 function jsonResponse($data, $code = 200) {
-    http_response_code($code); // HTTP-код
-    header('Content-Type: application/json'); // JSON заголовок
+    http_response_code($code);
+    header('Content-Type: application/json');
     echo json_encode($data);
     exit;
 }
 
-// @SECURITY_MODULE
+/*
+========================
+ ГЛАВНАЯ
+========================
+*/
+if ($route === 'home') {
 
-// главная страница
-if ($uri === '/' && $method === 'GET') {
     if (Auth::isLoggedIn()) {
         require 'views/dashboard.php';
     } else {
@@ -27,73 +34,113 @@ if ($uri === '/' && $method === 'GET') {
     }
 }
 
-// страница входа
-elseif ($uri === '/login' && $method === 'GET') {
+/*
+========================
+ LOGIN
+========================
+*/
+elseif ($route === 'login' && $method === 'GET') {
     require 'views/login.php';
 }
 
-// обработка входа
-elseif ($uri === '/login' && $method === 'POST') {
+elseif ($route === 'login' && $method === 'POST') {
+
     $res = Auth::login($_POST['login'], $_POST['password']);
-    if ($res === true) header("Location: /dashboard");
-    else $error = $res;
+
+    if ($res === true) {
+        header("Location: index.php?route=dashboard");
+        exit;
+    }
+
+    $error = $res;
     require 'views/login.php';
 }
 
-// регистрация
-elseif ($uri === '/register' && $method === 'GET') {
+
+/*
+========================
+ REGISTER
+========================
+*/
+elseif ($route === 'register' && $method === 'GET') {
     require 'views/register.php';
 }
 
-elseif ($uri === '/register' && $method === 'POST') {
-    $res = Auth::register($_POST['username'], $_POST['email'], $_POST['password'], $_POST['confirm']);
-    if ($res === true) header("Location: /login");
-    else $error = $res;
+elseif ($route === 'register' && $method === 'POST') {
+
+    $res = Auth::register(
+        $_POST['username'],
+        $_POST['email'],
+        $_POST['password'],
+        $_POST['confirm']
+    );
+
+    if ($res === true) {
+        header("Location: index.php?route=login");
+        exit;
+    }
+
+    $error = $res;
     require 'views/register.php';
 }
 
-// выход
-elseif ($uri === '/logout') {
+/*
+========================
+ LOGOUT
+========================
+*/
+elseif ($route === 'logout') {
     Auth::logout();
+    header("Location: index.php?route=login");
+    exit;
 }
 
-// дашборд
-elseif ($uri === '/dashboard') {
-    if (!Auth::isLoggedIn()) header("Location: /login");
+/*
+========================
+ DASHBOARD
+========================
+*/
+elseif ($route === 'dashboard') {
+
+    if (!Auth::isLoggedIn()) {
+        header("Location: index.php?route=login");
+        exit;
+    }
+
     require 'views/dashboard.php';
 }
 
-// API
-elseif (str_starts_with($uri, '/api/')) {
+/*
+========================
+ API
+========================
+*/
+elseif (str_starts_with($route, 'api/')) {
 
-    // проверка авторизации
     if (!Auth::isLoggedIn()) {
         jsonResponse(["success"=>false,"error"=>"Не авторизован"], 401);
     }
 
-    // @SECURITY_MODULE (Content-Type)
-
-    // читаем JSON тело
     $input = json_decode(file_get_contents('php://input'), true);
 
     try {
 
-        if ($uri === '/api/task/add') {
+        if ($route === 'api/task/add') {
             $id = Task::create($_SESSION['user_id'], $input['title']);
             jsonResponse(["success"=>true,"data"=>$id]);
         }
 
-        elseif ($uri === '/api/task/list') {
+        elseif ($route === 'api/task/list') {
             $tasks = Task::getAll($_SESSION['user_id'], $_GET['filter'] ?? 'all');
             jsonResponse(["success"=>true,"data"=>$tasks]);
         }
 
-        elseif ($uri === '/api/task/toggle') {
+        elseif ($route === 'api/task/toggle') {
             Task::toggle($input['id'], $_SESSION['user_id']);
             jsonResponse(["success"=>true]);
         }
 
-        elseif ($uri === '/api/task/delete') {
+        elseif ($route === 'api/task/delete') {
             Task::delete($input['id'], $_SESSION['user_id']);
             jsonResponse(["success"=>true]);
         }
@@ -107,7 +154,12 @@ elseif (str_starts_with($uri, '/api/')) {
     }
 }
 
+/*
+========================
+ 404
+========================
+*/
 else {
     http_response_code(404);
-    echo "404 Not Found"; // если маршрут не найден
+    echo "404 Not Found";
 }

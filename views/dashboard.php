@@ -8,7 +8,7 @@
     </span>
 
     <!-- кнопка выхода -->
-    <a href="/logout">Выйти</a>
+    <a href="index.php?route=logout">Выйти</a>
 </div>
 
 <div class="container">

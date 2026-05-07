@@ -13,7 +13,13 @@
 <button>Войти</button>
 </form>
 
-<a href="/register">Регистрация</a>
+<a href="index.php?route=register">Регистрация</a>
 </div>
+
+<?php if (!empty($error)) : ?>
+    <div style="color:red;">
+        <?= $error ?>
+    </div>
+<?php endif; ?>
 
 <?php require 'footer.php'; ?>

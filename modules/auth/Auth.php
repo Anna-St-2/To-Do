@@ -72,9 +72,11 @@ class Auth {
     }
 
     public static function logout() {
-        session_unset(); // очищаем сессию
-        session_destroy(); // уничтожаем
-        header("Location: /login"); // редирект
+        session_unset();
+        session_destroy();
+        session_destroy();
+    
+        header("Location: index.php?route=login");
         exit;
     }
 
