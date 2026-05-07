@@ -1,0 +1,46 @@
+body {
+    font-family: Arial;
+    background: #f5f7fa;
+    margin: 0;
+}
+
+.auth {
+    width: 400px;
+    margin: 100px auto;
+    text-align: center;
+}
+
+input {
+    display: block;
+    width: 100%;
+    margin: 10px 0;
+    padding: 10px;
+}
+
+button {
+    background: #4A90D9;
+    color: white;
+    border: none;
+    padding: 10px;
+    cursor: pointer;
+}
+
+.container {
+    max-width: 600px;
+    margin: 20px auto;
+}
+
+.top {
+    display: flex;
+    justify-content: space-between;
+    padding: 10px;
+    background: white;
+}
+
+li {
+    display: flex;
+    justify-content: space-between;
+    background: white;
+    margin: 5px 0;
+    padding: 10px;
+}
