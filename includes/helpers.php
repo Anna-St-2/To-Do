@@ -86,4 +86,40 @@ function verifyCsrfToken(?string $token): bool
 }
 
 
+
+
+/**
+ * Логирование событий безопасности в файл
+ * @param string $type Тип события
+ * @param string $message Сообщение
+ * @param array $context Дополнительные данные
+ */
+function securityLog(string $type, string $message, array $context = []): void
+{
+    $logFile = __DIR__ . '/../logs/security.log';
+    $logDir = dirname($logFile);
+    
+    // Создаём папку для логов, если её нет
+    if (!is_dir($logDir)) {
+        mkdir($logDir, 0750, true);
+    }
+    
+    $timestamp = date('Y-m-d H:i:s');
+    $userId = $_SESSION['user_id'] ?? 'anonymous';
+    $ip = $_SERVER['REMOTE_ADDR'] ?? 'unknown';
+    
+    $logEntry = sprintf(
+        "[%s] [%s] [user:%s] [ip:%s] %s %s\n",
+        $timestamp,
+        strtoupper($type),
+        $userId,
+        $ip,
+        $message,
+        !empty($context) ? json_encode($context, JSON_UNESCAPED_UNICODE) : ''
+    );
+    
+    file_put_contents($logFile, $logEntry, FILE_APPEND | LOCK_EX);
+}
+
+
 ?>

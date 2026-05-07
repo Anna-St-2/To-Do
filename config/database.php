@@ -9,8 +9,9 @@ class Database
     // Параметры подключения — измени под свои данные
     private const DB_HOST = 'localhost';
     private const DB_NAME = 'todo_app';
-    private const DB_USER = 'root';         // замени на своего пользователя
-    private const DB_PASS = '';             // замени на свой пароль
+    private const DB_USER = 'todo_app_user';
+    private const DB_PASS = 'todo_secure_pass_2024';           // замени на свой пароль
+    
     private const DB_CHARSET = 'utf8mb4';
 
     private static ?PDO $instance = null;

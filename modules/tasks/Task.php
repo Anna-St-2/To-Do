@@ -29,6 +29,12 @@ class Task
         }
 
         // @SECURITY_MODULE: место для логирования создания задачи
+        // Логирование
+        securityLog('info', 'Задача создана', [
+            'task_id' => (int) $db->lastInsertId(),
+            'title_length' => mb_strlen($title)
+        ]);
+        
         $db = Database::getConnection();
         $stmt = $db->prepare('INSERT INTO tasks (user_id, title) VALUES (?, ?)');
         $stmt->execute([$userId, $title]);
@@ -93,6 +99,13 @@ class Task
 
         // Инвертирование статуса
         // @SECURITY_MODULE: место для логирования изменений
+        // Логирование
+        securityLog('info', 'Статус задачи изменён', [
+            'task_id' => $taskId,
+            'new_status' => !$task['is_completed']
+        ]);
+        
+        
         $stmt = $db->prepare('UPDATE tasks SET is_completed = NOT is_completed WHERE id = ? AND user_id = ?');
         $stmt->execute([$taskId, $userId]);
 
@@ -123,6 +136,9 @@ class Task
         }
 
         // @SECURITY_MODULE: место для логирования удаления
+       // Логирование
+        securityLog('warning', 'Задача удалена', ['task_id' => $taskId]);
+       
         $stmt = $db->prepare('DELETE FROM tasks WHERE id = ? AND user_id = ?');
         $stmt->execute([$taskId, $userId]);
 

@@ -59,6 +59,9 @@ class Auth
 
         // Хеширование пароля и сохранение
         // @SECURITY_MODULE: место для логирования регистрации
+        // Логирование регистрации
+        securityLog('info', 'Новый пользователь зарегистрирован', ['username' => $username]);
+        
         $passwordHash = password_hash($password, PASSWORD_BCRYPT);
 
         $stmt = $db->prepare('INSERT INTO users (username, email, password_hash) VALUES (?, ?, ?)');
@@ -77,37 +80,38 @@ class Auth
     public static function login(string $login, string $password): array
     {
         $login = trim($login);
-
+    
         if (empty($login) || empty($password)) {
             return ['success' => false, 'error' => 'Заполните все поля'];
         }
-
+    
         $db = Database::getConnection();
-
-        // @SECURITY_MODULE: место для ограничения попыток входа
-
+    
         // Поиск пользователя по логину ИЛИ email
         $stmt = $db->prepare('SELECT id, username, password_hash FROM users WHERE username = ? OR email = ?');
         $stmt->execute([$login, $login]);
         $user = $stmt->fetch();
-
+    
         if (!$user) {
+            // Пользователь не найден — логируем и возвращаем ошибку
+            securityLog('warning', 'Неудачная попытка входа: пользователь не найден', ['login' => $login]);
             return ['success' => false, 'error' => 'Неверный логин или пароль'];
         }
-
-        // @SECURITY_MODULE: место для проверки блокировки аккаунта
-
+    
         if (!password_verify($password, $user['password_hash'])) {
+            // Пароль неверный — логируем и возвращаем ошибку
+            securityLog('warning', 'Неудачная попытка входа: неверный пароль', ['login' => $login]);
             return ['success' => false, 'error' => 'Неверный логин или пароль'];
         }
-
-        // Успешный вход — сохраняем в сессию
+    
+        // Успешный вход
         $_SESSION['user_id'] = $user['id'];
         $_SESSION['username'] = $user['username'];
-
-        // Регенерация ID сессии для защиты от session fixation
         session_regenerate_id(true);
-
+    
+        // Логирование успешного входа — ТОЛЬКО ОДИН РАЗ, ТОЛЬКО ЗДЕСЬ
+        securityLog('info', 'Успешный вход в систему');
+    
         return ['success' => true, 'error' => ''];
     }
 
