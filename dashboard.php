@@ -6,7 +6,8 @@
 // Настройка безопасных сессионных cookies ДО запуска сессии
 ini_set('session.cookie_httponly', 1);
 ini_set('session.cookie_samesite', 'Lax');
-ini_set('session.cookie_secure', 0);       // 0 для localhost
+ini_set('session.cookie_secure', 0);       // 0 для localhost Изменить на 1 при развёртывании с HTTPS
+
 ini_set('session.use_strict_mode', 1);
 
 session_start();
@@ -19,6 +20,7 @@ require_once __DIR__ . '/modules/tasks/Task.php';
 
 // Устанавливаем защитные заголовки
 setSecurityHeaders();
+forceHttps();
 
 // Требуем авторизацию
 Auth::requireLogin();

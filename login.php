@@ -16,6 +16,7 @@ require_once __DIR__ . '/modules/auth/Auth.php';
 require_once __DIR__ . '/includes/helpers.php';
 
 setSecurityHeaders();
+forceHttps();
 
 // Если уже авторизован — на дашборд
 Auth::redirectIfLoggedIn();

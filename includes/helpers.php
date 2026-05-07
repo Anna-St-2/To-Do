@@ -42,6 +42,12 @@ function setSecurityHeaders(): void
     // Разрешаем скрипты и стили только с нашего домена
     header("Content-Security-Policy: default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; connect-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'");
     
+    // HSTS — только если соединение HTTPS
+    // На localhost не сработает, на проде включится автоматически
+    if (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') {
+        header('Strict-Transport-Security: max-age=31536000; includeSubDomains');
+    }
+
     // Отключаем отображение PHP в заголовках
     header_remove('X-Powered-By');
 
@@ -120,6 +126,41 @@ function securityLog(string $type, string $message, array $context = []): void
     
     file_put_contents($logFile, $logEntry, FILE_APPEND | LOCK_EX);
 }
+
+
+
+
+
+/**
+ * Принудительное перенаправление на HTTPS
+ * На localhost отключено, на продакшене включить
+ */
+function forceHttps(): void
+{
+    // Проверяем, включён ли уже HTTPS
+    if (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') {
+        return;
+    }
+    
+    // Проверяем заголовок от прокси (для облачных серверов)
+    if (($_SERVER['HTTP_X_FORWARDED_PROTO'] ?? '') === 'https') {
+        return;
+    }
+    
+    // На localhost НЕ редиректим
+    if ($_SERVER['SERVER_NAME'] === 'localhost' || $_SERVER['SERVER_ADDR'] === '127.0.0.1') {
+        return;
+    }
+    
+    // Редирект на HTTPS
+    $redirectUrl = 'https://' . $_SERVER['HTTP_HOST'] . $_SERVER['REQUEST_URI'];
+    header('Location: ' . $redirectUrl, true, 301);
+    exit;
+}
+
+
+
+
 
 
 ?>
