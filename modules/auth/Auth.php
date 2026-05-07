@@ -1,86 +1,170 @@
 <?php
+/**
+ * Модуль аутентификации
+ * Отвечает за регистрацию, вход и выход пользователей
+ */
+
 require_once __DIR__ . '/../../config/database.php';
 
-class Auth {
+class Auth
+{
+    /**
+     * Регистрация нового пользователя
+     * 
+     * @param string $username        Логин
+     * @param string $email           Email
+     * @param string $password        Пароль
+     * @param string $confirmPassword Подтверждение пароля
+     * @return array                  ['success' => bool, 'error' => string]
+     */
+    public static function register(string $username, string $email, string $password, string $confirmPassword): array
+    {
+        // Валидация
+        $username = trim($username);
+        $email = trim($email);
 
-    public static function register($username, $email, $password, $confirmPassword) {
-        $pdo = Database::getInstance()->getConnection(); // получаем PDO
-
-        // простая валидация
-        if (strlen($username) < 3 || strlen($username) > 50) {
-            return "Логин должен быть от 3 до 50 символов";
+        if (mb_strlen($username) < 3 || mb_strlen($username) > 50) {
+            return ['success' => false, 'error' => 'Логин должен быть от 3 до 50 символов'];
         }
 
         if (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
-            return "Некорректный email";
+            return ['success' => false, 'error' => 'Некорректный email'];
         }
 
-        if (strlen($password) < 6) {
-            return "Пароль должен быть минимум 6 символов";
+        if (mb_strlen($password) < 6) {
+            return ['success' => false, 'error' => 'Пароль должен содержать минимум 6 символов'];
         }
 
         if ($password !== $confirmPassword) {
-            return "Пароли не совпадают";
+            return ['success' => false, 'error' => 'Пароли не совпадают'];
         }
 
-        // проверка уникальности логина
-        $stmt = $pdo->prepare("SELECT id FROM users WHERE username = ?");
+        $db = Database::getConnection();
+
+        // @SECURITY_MODULE: место для проверки капчи перед регистрацией
+
+        // Проверка уникальности логина
+        $stmt = $db->prepare('SELECT id FROM users WHERE username = ?');
         $stmt->execute([$username]);
-        if ($stmt->fetch()) return "Логин уже занят";
+        if ($stmt->fetch()) {
+            return ['success' => false, 'error' => 'Пользователь с таким логином уже существует'];
+        }
 
-        // проверка уникальности email
-        $stmt = $pdo->prepare("SELECT id FROM users WHERE email = ?");
+        // Проверка уникальности email
+        $stmt = $db->prepare('SELECT id FROM users WHERE email = ?');
         $stmt->execute([$email]);
-        if ($stmt->fetch()) return "Email уже используется";
+        if ($stmt->fetch()) {
+            return ['success' => false, 'error' => 'Пользователь с таким email уже существует'];
+        }
 
-        // @SECURITY_MODULE (капча)
+        // Хеширование пароля и сохранение
+        // @SECURITY_MODULE: место для логирования регистрации
+        $passwordHash = password_hash($password, PASSWORD_BCRYPT);
 
-        // хешируем пароль
-        $hash = password_hash($password, PASSWORD_BCRYPT);
+        $stmt = $db->prepare('INSERT INTO users (username, email, password_hash) VALUES (?, ?, ?)');
+        $stmt->execute([$username, $email, $passwordHash]);
 
-        // сохраняем пользователя
-        $stmt = $pdo->prepare("INSERT INTO users (username, email, password_hash) VALUES (?, ?, ?)");
-        $stmt->execute([$username, $email, $hash]);
-
-        return true; // успех
+        return ['success' => true, 'error' => ''];
     }
 
-    public static function login($login, $password) {
-        $pdo = Database::getInstance()->getConnection();
+    /**
+     * Вход пользователя
+     * 
+     * @param string $login    Логин или email
+     * @param string $password Пароль
+     * @return array           ['success' => bool, 'error' => string]
+     */
+    public static function login(string $login, string $password): array
+    {
+        $login = trim($login);
 
-        // ищем по логину ИЛИ email
-        $stmt = $pdo->prepare("SELECT * FROM users WHERE username = ? OR email = ?");
+        if (empty($login) || empty($password)) {
+            return ['success' => false, 'error' => 'Заполните все поля'];
+        }
+
+        $db = Database::getConnection();
+
+        // @SECURITY_MODULE: место для ограничения попыток входа
+
+        // Поиск пользователя по логину ИЛИ email
+        $stmt = $db->prepare('SELECT id, username, password_hash FROM users WHERE username = ? OR email = ?');
         $stmt->execute([$login, $login]);
         $user = $stmt->fetch();
 
-        if (!$user) return "Пользователь не найден";
-
-        // @SECURITY_MODULE (ограничение попыток)
-
-        // проверка пароля
-        if (!password_verify($password, $user['password_hash'])) {
-            return "Неверный пароль";
+        if (!$user) {
+            return ['success' => false, 'error' => 'Неверный логин или пароль'];
         }
 
-        session_regenerate_id(true); // защита от фиксации сессии
+        // @SECURITY_MODULE: место для проверки блокировки аккаунта
 
-        // сохраняем данные в сессию
+        if (!password_verify($password, $user['password_hash'])) {
+            return ['success' => false, 'error' => 'Неверный логин или пароль'];
+        }
+
+        // Успешный вход — сохраняем в сессию
         $_SESSION['user_id'] = $user['id'];
         $_SESSION['username'] = $user['username'];
 
-        return true;
+        // Регенерация ID сессии для защиты от session fixation
+        session_regenerate_id(true);
+
+        return ['success' => true, 'error' => ''];
     }
 
-    public static function logout() {
-        session_unset();
+    /**
+     * Выход пользователя
+     */
+    public static function logout(): void
+    {
+        // Очистка сессии
+        $_SESSION = [];
+        
+        // Удаление сессионной cookie
+        if (ini_get('session.use_cookies')) {
+            $params = session_get_cookie_params();
+            setcookie(
+                session_name(),
+                '',
+                time() - 42000,
+                $params['path'],
+                $params['domain'],
+                $params['secure'],
+                $params['httponly']
+            );
+        }
+
         session_destroy();
-        session_destroy();
-    
-        header("Location: index.php?route=login");
-        exit;
     }
 
-    public static function isLoggedIn() {
-        return isset($_SESSION['user_id']); // проверка авторизации
+    /**
+     * Проверка авторизации
+     * 
+     * @return bool
+     */
+    public static function isLoggedIn(): bool
+    {
+        return isset($_SESSION['user_id']);
+    }
+
+    /**
+     * Требовать авторизацию (если нет — редирект на login.php)
+     */
+    public static function requireLogin(): void
+    {
+        if (!self::isLoggedIn()) {
+            header('Location: login.php');
+            exit;
+        }
+    }
+
+    /**
+     * Если уже авторизован — редирект на дашборд
+     */
+    public static function redirectIfLoggedIn(): void
+    {
+        if (self::isLoggedIn()) {
+            header('Location: dashboard.php');
+            exit;
+        }
     }
 }

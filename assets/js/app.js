@@ -1,88 +1,334 @@
+/**
+ * To-Do List — клиентская логика
+ * AJAX-запросы к API и манипуляции с DOM
+ */
+
+// ============================================
+// API-МОДУЛЬ
+// ============================================
+
 const API = {
-    async request(endpoint, method='GET', data=null) {
+    /**
+     * Универсальная функция для запросов к api.php
+     * 
+     * @param {string} action - действие (task_add, task_list, task_toggle, task_delete)
+     * @param {string} method - HTTP-метод (GET, POST)
+     * @param {object} body   - тело запроса (для POST)
+     * @returns {Promise}
+     */
+    async request(action, method = 'GET', body = null) {
+        let url = `api.php?action=${action}`;
 
-        // @SECURITY_MODULE (CSRF)
+        // Для GET-запросов добавляем параметры в URL
+        if (method === 'GET' && body) {
+            const params = new URLSearchParams(body).toString();
+            url += '&' + params;
+        }
 
-        let options = {
-            method,
-            headers: {'Content-Type': 'application/json'} // отправляем JSON
+        const options = {
+            method: method,
+            headers: {
+                'Content-Type': 'application/json',
+                'Accept': 'application/json',
+                'X-CSRF-Token': window.CSRF_TOKEN || ''
+            }
         };
 
-        if (data) options.body = JSON.stringify(data); // тело запроса
+        // @SECURITY_MODULE: место для добавления CSRF-токена в заголовки
 
-        let res = await fetch(endpoint, options); // fetch
+        // Для POST-запросов тело в JSON
+        if (method === 'POST' && body) {
+            options.body = JSON.stringify(body);
+        }
 
-        if (!res.ok) throw new Error("Ошибка сети");
+        const response = await fetch(url, options);
 
-        return res.json(); // парсим JSON
+        // Если ответ не ок — пробрасываем ошибку
+        if (!response.ok) {
+            const errorData = await response.json().catch(() => ({}));
+            throw new Error(errorData.error || `Ошибка сервера (${response.status})`);
+        }
+
+        return response.json();
     }
 };
 
-// загрузка задач
-async function loadTasks(filter='all') {
-    let res = await API.request(`/api/task/list?filter=${filter}`);
-    renderTasks(res.data);
+// ============================================
+//    DOM-ЭЛЕМЕНТЫ
+//    ============================================
+
+const taskList = document.getElementById('taskList');
+const addTaskForm = document.getElementById('addTaskForm');
+const taskTitleInput = document.getElementById('taskTitle');
+const loadingIndicator = document.getElementById('loadingIndicator');
+const errorMessage = document.getElementById('errorMessage');
+const filterButtons = document.querySelectorAll('.filter-btn');
+
+// Текущий фильтр
+let currentFilter = 'all';
+
+// ============================================
+//    ФУНКЦИИ РАБОТЫ С ЗАДАЧАМИ
+//    ============================================
+
+/**
+ * Загрузка списка задач с сервера
+ * 
+ * @param {string} filter - 'all' | 'active' | 'completed'
+ */
+async function loadTasks(filter = 'all') {
+    currentFilter = filter;
+    showLoading(true);
+    hideError();
+
+    try {
+        const result = await API.request('task_list', 'GET', { filter: filter });
+
+        if (result.success) {
+            renderTasks(result.tasks);
+        } else {
+            showError(result.error || 'Не удалось загрузить задачи');
+        }
+    } catch (error) {
+        showError(error.message || 'Ошибка соединения с сервером');
+    } finally {
+        showLoading(false);
+    }
 }
 
-// отрисовка списка
+/**
+ * Отрисовка списка задач в DOM
+ * 
+ * @param {Array} tasks - массив задач
+ */
 function renderTasks(tasks) {
-    const list = document.getElementById('taskList');
-    list.innerHTML = '';
+    taskList.innerHTML = '';
 
-    if (!tasks.length) {
-        list.innerHTML = '<p>Нет задач</p>';
+    // Пустой список
+    if (tasks.length === 0) {
+        taskList.innerHTML = `
+            <div class="empty-state">
+                <p>Нет задач</p>
+                <p class="empty-hint">
+                    ${currentFilter === 'all' ? 'Добавьте первую задачу выше' : 
+                      currentFilter === 'active' ? 'Все задачи выполнены!' : 
+                      'Нет выполненных задач'}
+                </p>
+            </div>
+        `;
         return;
     }
 
-    tasks.forEach(t => {
-        let li = document.createElement('li');
-
-        li.innerHTML = `
-            <input type="checkbox" ${t.is_completed ? 'checked':''}>
-            <span style="${t.is_completed ? 'text-decoration:line-through':''}">
-                ${t.title}
-            </span>
-            <button>×</button>
+    // Создаём элементы задач
+    tasks.forEach(task => {
+        const taskItem = document.createElement('div');
+        taskItem.className = `task-item ${task.is_completed === '1' || task.is_completed === 1 ? 'completed' : ''}`;
+        taskItem.dataset.id = task.id;
+        taskItem.innerHTML = `
+            <label class="task-checkbox-label">
+                <input
+                    type="checkbox"
+                    class="task-checkbox"
+                    ${task.is_completed === '1' || task.is_completed === 1 ? 'checked' : ''}
+                >
+                <span class="checkmark"></span>
+            </label>
+            <span class="task-title">${escapeHtml(task.title)}</span>
+            <button class="task-delete-btn" title="Удалить задачу">×</button>
         `;
 
-        // события
-        li.querySelector('input').onclick = () => toggleTask(t.id);
-        li.querySelector('button').onclick = () => deleteTask(t.id);
+        // Обработчик клика по чекбоксу
+        const checkbox = taskItem.querySelector('.task-checkbox');
+        checkbox.addEventListener('change', () => toggleTask(task.id));
 
-        list.appendChild(li);
+        // Обработчик клика по кнопке удаления
+        const deleteBtn = taskItem.querySelector('.task-delete-btn');
+        deleteBtn.addEventListener('click', () => deleteTask(task.id));
+
+        taskList.appendChild(taskItem);
     });
 }
 
-// добавление задачи
+/**
+ * Добавление новой задачи
+ */
 async function addTask() {
-    let input = document.getElementById('taskInput');
-    await API.request('/api/task/add','POST',{title:input.value});
-    input.value='';
-    loadTasks();
+    const title = taskTitleInput.value.trim();
+    if (!title) {
+        showError('Введите текст задачи');
+        taskTitleInput.focus();
+        return;
+    }
+
+    hideError();
+
+    try {
+        const result = await API.request('task_add', 'POST', { title: title });
+
+        if (result.success) {
+            taskTitleInput.value = '';
+            taskTitleInput.focus();
+            // Перезагружаем список
+            await loadTasks(currentFilter);
+        } else {
+            showError(result.error || 'Не удалось добавить задачу');
+        }
+    } catch (error) {
+        showError(error.message || 'Ошибка соединения с сервером');
+    }
 }
 
-// переключение статуса
-async function toggleTask(id) {
-    await API.request('/api/task/toggle','POST',{id});
-    loadTasks();
+/**
+ * Переключение статуса задачи (выполнена/не выполнена)
+ * 
+ * @param {number} taskId - ID задачи
+ */
+async function toggleTask(taskId) {
+    hideError();
+
+    try {
+        const result = await API.request('task_toggle', 'POST', { task_id: taskId });
+
+        if (result.success) {
+            // Если фильтр не "все", перезагружаем список
+            if (currentFilter !== 'all') {
+                await loadTasks(currentFilter);
+            } else {
+                // Просто обновляем визуал у элемента
+                const taskItem = document.querySelector(`.task-item[data-id="${taskId}"]`);
+                if (taskItem) {
+                    if (result.is_completed) {
+                        taskItem.classList.add('completed');
+                        taskItem.querySelector('.task-checkbox').checked = true;
+                    } else {
+                        taskItem.classList.remove('completed');
+                        taskItem.querySelector('.task-checkbox').checked = false;
+                    }
+                }
+            }
+        } else {
+            showError(result.error || 'Не удалось обновить задачу');
+        }
+    } catch (error) {
+        showError(error.message || 'Ошибка соединения с сервером');
+    }
 }
 
-// удаление задачи
-async function deleteTask(id) {
-    await API.request('/api/task/delete','POST',{id});
-    loadTasks();
+/**
+ * Удаление задачи
+ * 
+ * @param {number} taskId - ID задачи
+ */
+async function deleteTask(taskId) {
+    hideError();
+
+    // Анимация удаления — добавляем класс
+    const taskItem = document.querySelector(`.task-item[data-id="${taskId}"]`);
+    if (taskItem) {
+        taskItem.style.opacity = '0.5';
+        taskItem.style.transform = 'scale(0.95)';
+    }
+
+    try {
+        const result = await API.request('task_delete', 'POST', { task_id: taskId });
+
+        if (result.success) {
+            // Перезагружаем список, чтобы сохранить актуальное состояние
+            await loadTasks(currentFilter);
+        } else {
+            // Возвращаем визуал, если ошибка
+            if (taskItem) {
+                taskItem.style.opacity = '1';
+                taskItem.style.transform = 'scale(1)';
+            }
+            showError(result.error || 'Не удалось удалить задачу');
+        }
+    } catch (error) {
+        if (taskItem) {
+            taskItem.style.opacity = '1';
+            taskItem.style.transform = 'scale(1)';
+        }
+        showError(error.message || 'Ошибка соединения с сервером');
+    }
 }
 
-// инициализация
-document.addEventListener('DOMContentLoaded', () => {
-    loadTasks();
+// ============================================
+//    ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ
+//    ============================================
 
-    document.getElementById('taskForm').onsubmit = e => {
-        e.preventDefault(); // отмена перезагрузки
-        addTask();
-    };
+/**
+ * Показать/скрыть индикатор загрузки
+ * 
+ * @param {boolean} show
+ */
+function showLoading(show) {
+    loadingIndicator.style.display = show ? 'block' : 'none';
+}
 
-    document.querySelectorAll('.filters button').forEach(btn => {
-        btn.onclick = () => loadTasks(btn.dataset.filter);
+/**
+ * Показать сообщение об ошибке
+ * 
+ * @param {string} message
+ */
+function showError(message) {
+    errorMessage.textContent = message;
+    errorMessage.style.display = 'block';
+    // Автоматически скрываем через 5 секунд
+    clearTimeout(errorMessage._timeout);
+    errorMessage._timeout = setTimeout(() => {
+        errorMessage.style.display = 'none';
+    }, 5000);
+}
+
+/**
+ * Скрыть сообщение об ошибке
+ */
+function hideError() {
+    errorMessage.style.display = 'none';
+    clearTimeout(errorMessage._timeout);
+}
+
+/**
+ * Экранирование HTML (защита от XSS на клиенте)
+ * 
+ * @param {string} text
+ * @returns {string}
+ */
+function escapeHtml(text) {
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
+}
+
+// ============================================
+//    ОБРАБОТЧИКИ СОБЫТИЙ
+//    ============================================
+
+// Сабмит формы добавления задачи
+addTaskForm.addEventListener('submit', function (e) {
+    e.preventDefault();
+    addTask();
+});
+
+// Кнопки фильтрации
+filterButtons.forEach(btn => {
+    btn.addEventListener('click', function () {
+        // Обновляем активную кнопку
+        filterButtons.forEach(b => b.classList.remove('active'));
+        this.classList.add('active');
+
+        // Загружаем задачи с фильтром
+        const filter = this.dataset.filter;
+        loadTasks(filter);
     });
+});
+
+// ============================================
+//    ИНИЦИАЛИЗАЦИЯ
+//    ============================================
+
+// При загрузке страницы — загружаем все задачи
+document.addEventListener('DOMContentLoaded', () => {
+    // Фокус на поле ввода
+    taskTitleInput.focus();
 });

@@ -1,66 +1,131 @@
 <?php
+/**
+ * Модуль управления задачами
+ * CRUD-операции с привязкой к пользователю
+ */
+
 require_once __DIR__ . '/../../config/database.php';
 
-class Task {
+class Task
+{
+    /**
+     * Создание новой задачи
+     * 
+     * @param int    $userId ID пользователя
+     * @param string $title  Текст задачи
+     * @return array         ['success' => bool, 'id' => int, 'error' => string]
+     */
+    public static function create(int $userId, string $title): array
+    {
+        $title = trim($title);
 
-    public static function create($userId, $title) {
-        // проверка названия
-        if (!$title || strlen($title) > 255) {
-            throw new Exception("Некорректное название");
+        // Валидация
+        if (empty($title)) {
+            return ['success' => false, 'error' => 'Текст задачи не может быть пустым'];
         }
 
-        $pdo = Database::getInstance()->getConnection();
+        if (mb_strlen($title) > 255) {
+            return ['success' => false, 'error' => 'Текст задачи слишком длинный (максимум 255 символов)'];
+        }
 
-        // @SECURITY_MODULE (логирование)
-
-        // добавляем задачу
-        $stmt = $pdo->prepare("INSERT INTO tasks (user_id, title) VALUES (?, ?)");
+        // @SECURITY_MODULE: место для логирования создания задачи
+        $db = Database::getConnection();
+        $stmt = $db->prepare('INSERT INTO tasks (user_id, title) VALUES (?, ?)');
         $stmt->execute([$userId, $title]);
 
-        return $pdo->lastInsertId(); // возвращаем id
+        return [
+            'success' => true,
+            'id'      => (int) $db->lastInsertId(),
+            'error'   => ''
+        ];
     }
 
-    public static function getAll($userId, $filter = 'all') {
-        $pdo = Database::getInstance()->getConnection();
+    /**
+     * Получение списка задач пользователя с фильтром
+     * 
+     * @param int    $userId ID пользователя
+     * @param string $filter 'all' | 'active' | 'completed'
+     * @return array         ['success' => bool, 'tasks' => array]
+     */
+    public static function getAll(int $userId, string $filter = 'all'): array
+    {
+        $sql = 'SELECT id, title, is_completed, created_at FROM tasks WHERE user_id = ?';
 
-        // @SECURITY_MODULE (логирование)
+        // Добавление условия фильтра
+        if ($filter === 'active') {
+            $sql .= ' AND is_completed = 0';
+        } elseif ($filter === 'completed') {
+            $sql .= ' AND is_completed = 1';
+        }
 
-        // базовый запрос
-        $query = "SELECT * FROM tasks WHERE user_id = ?";
+        $sql .= ' ORDER BY created_at DESC';
 
-        // фильтрация
-        if ($filter === 'active') $query .= " AND is_completed = 0";
-        if ($filter === 'completed') $query .= " AND is_completed = 1";
-
-        $query .= " ORDER BY created_at DESC"; // сортировка
-
-        $stmt = $pdo->prepare($query);
+        // @SECURITY_MODULE: место для логирования запросов
+        $db = Database::getConnection();
+        $stmt = $db->prepare($sql);
         $stmt->execute([$userId]);
 
-        return $stmt->fetchAll(); // массив задач
+        return [
+            'success' => true,
+            'tasks'   => $stmt->fetchAll()
+        ];
     }
 
-    public static function toggle($taskId, $userId) {
-        $pdo = Database::getInstance()->getConnection();
+    /**
+     * Переключение статуса задачи (выполнена/не выполнена)
+     * 
+     * @param int $taskId ID задачи
+     * @param int $userId ID пользователя
+     * @return array      ['success' => bool, 'is_completed' => bool, 'error' => string]
+     */
+    public static function toggle(int $taskId, int $userId): array
+    {
+        $db = Database::getConnection();
 
-        // @SECURITY_MODULE
+        // Проверка, что задача существует и принадлежит пользователю
+        $stmt = $db->prepare('SELECT id, is_completed FROM tasks WHERE id = ? AND user_id = ?');
+        $stmt->execute([$taskId, $userId]);
+        $task = $stmt->fetch();
 
-        // переключаем статус
-        $stmt = $pdo->prepare("UPDATE tasks SET is_completed = NOT is_completed WHERE id = ? AND user_id = ?");
+        if (!$task) {
+            return ['success' => false, 'error' => 'Задача не найдена'];
+        }
+
+        // Инвертирование статуса
+        // @SECURITY_MODULE: место для логирования изменений
+        $stmt = $db->prepare('UPDATE tasks SET is_completed = NOT is_completed WHERE id = ? AND user_id = ?');
         $stmt->execute([$taskId, $userId]);
 
-        return true;
+        return [
+            'success'      => true,
+            'is_completed' => !$task['is_completed'],
+            'error'        => ''
+        ];
     }
 
-    public static function delete($taskId, $userId) {
-        $pdo = Database::getInstance()->getConnection();
+    /**
+     * Удаление задачи
+     * 
+     * @param int $taskId ID задачи
+     * @param int $userId ID пользователя
+     * @return array      ['success' => bool, 'error' => string]
+     */
+    public static function delete(int $taskId, int $userId): array
+    {
+        $db = Database::getConnection();
 
-        // @SECURITY_MODULE
-
-        // удаляем задачу
-        $stmt = $pdo->prepare("DELETE FROM tasks WHERE id = ? AND user_id = ?");
+        // Проверка принадлежности задачи пользователю
+        $stmt = $db->prepare('SELECT id FROM tasks WHERE id = ? AND user_id = ?');
         $stmt->execute([$taskId, $userId]);
 
-        return true;
+        if (!$stmt->fetch()) {
+            return ['success' => false, 'error' => 'Задача не найдена'];
+        }
+
+        // @SECURITY_MODULE: место для логирования удаления
+        $stmt = $db->prepare('DELETE FROM tasks WHERE id = ? AND user_id = ?');
+        $stmt->execute([$taskId, $userId]);
+
+        return ['success' => true, 'error' => ''];
     }
 }

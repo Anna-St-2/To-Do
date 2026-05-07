@@ -1,36 +1,46 @@
 <?php
+/**
+ * Подключение к базе данных (паттерн Singleton)
+ * Обеспечивает единственное PDO-соединение на всё приложение
+ */
 
-class Database {
-    private static $instance = null; // хранит единственный экземпляр класса
-    private $pdo; // объект подключения PDO
+class Database
+{
+    // Параметры подключения — измени под свои данные
+    private const DB_HOST = 'localhost';
+    private const DB_NAME = 'todo_app';
+    private const DB_USER = 'root';         // замени на своего пользователя
+    private const DB_PASS = '';             // замени на свой пароль
+    private const DB_CHARSET = 'utf8mb4';
 
-    // параметры подключения к БД
-    private const HOST = 'localhost';
-    private const DB   = 'todo_app';
-    private const USER = 'root';
-    private const PASS = '';
+    private static ?PDO $instance = null;
 
-    private function __construct() {
-        // строка подключения (DSN)
-        $dsn = "mysql:host=" . self::HOST . ";dbname=" . self::DB . ";charset=utf8mb4";
-
-        // создаём PDO с настройками
-        $this->pdo = new PDO($dsn, self::USER, self::PASS, [
-            PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION, // ошибки как исключения
-            PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC, // ассоциативные массивы
-            PDO::ATTR_EMULATE_PREPARES => false // настоящие prepared statements
-        ]);
-    }
-
-    public static function getInstance() {
-        // создаём объект только один раз
+    /**
+     * Возвращает единственный экземпляр PDO
+     */
+    public static function getConnection(): PDO
+    {
         if (self::$instance === null) {
-            self::$instance = new self();
+            $dsn = sprintf(
+                'mysql:host=%s;dbname=%s;charset=%s',
+                self::DB_HOST,
+                self::DB_NAME,
+                self::DB_CHARSET
+            );
+
+            $options = [
+                PDO::ATTR_ERRMODE            => PDO::ERRMODE_EXCEPTION,
+                PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
+                PDO::ATTR_EMULATE_PREPARES   => false, // Реальные подготовленные выражения
+            ];
+
+            self::$instance = new PDO($dsn, self::DB_USER, self::DB_PASS, $options);
         }
+
         return self::$instance;
     }
 
-    public function getConnection() {
-        return $this->pdo; // возвращаем подключение
-    }
+    // Запрещаем создание экземпляров класса
+    private function __construct() {}
+    private function __clone() {}
 }
