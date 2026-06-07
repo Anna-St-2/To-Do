@@ -28,16 +28,18 @@ class Task
             return ['success' => false, 'error' => 'Текст задачи слишком длинный (максимум 255 символов)'];
         }
 
-        // @SECURITY_MODULE: место для логирования создания задачи
-        // Логирование
+        // Сначала получаем соединение
+        $db = Database::getConnection();
+        
+        // Затем выполняем запрос
+        $stmt = $db->prepare('INSERT INTO tasks (user_id, title) VALUES (?, ?)');
+        $stmt->execute([$userId, $title]);
+
+        // Логирование — после того, как задача создана
         securityLog('info', 'Задача создана', [
             'task_id' => (int) $db->lastInsertId(),
             'title_length' => mb_strlen($title)
         ]);
-        
-        $db = Database::getConnection();
-        $stmt = $db->prepare('INSERT INTO tasks (user_id, title) VALUES (?, ?)');
-        $stmt->execute([$userId, $title]);
 
         return [
             'success' => true,
